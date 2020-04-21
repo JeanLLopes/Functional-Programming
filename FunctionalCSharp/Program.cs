@@ -5,49 +5,65 @@ using System.Text;
 
 namespace FunctionalCSharp
 {
-    class Program
+    public static class Disposable
     {
-        private static string BuildSelectBox(IDictionary<int, string> options, string id, bool includeUnknown)
+        public static TResult Using<TDisposable, TResult>
+        (
+            Func<TDisposable> factory,
+            Func<TDisposable, TResult> fn
+        ) where TDisposable : IDisposable
         {
-            var html = new StringBuilder();
-            html.AppendFormat("<select id=\"{0}\" name=\"{0}\">", id);
-            html.AppendLine();
-
-            if (includeUnknown)
+            using (var disposabled = factory())
             {
-                html.AppendLine("\t<option>Unknown</option>");
+                return fn(disposabled);
             }
-
-            foreach (var opt in options)
-            {
-                html.AppendFormat("\t<option value=\"{0}\">{1}</option>", opt.Key, opt.Value);
-                html.AppendLine();
-            }
-
-            html.AppendLine("</select>");
-
-            return html.ToString();
         }
+    }
 
-        static void Main(string[] args)
+    public static class StringBuilderExtensions
+    {
+        public static StringBuilder AppendFormattedLine(this StringBuilder @this, string format, params object[] arguments) =>
+                @this.AppendFormat(format, arguments).AppendLine();
+
+        public static StringBuilder AppendLineWhen(this StringBuilder @this, Func<bool> predicate, Func<StringBuilder, StringBuilder> fn) =>
+            predicate() ? fn(@this) : @this;
+
+        public static StringBuilder AppendSequence<T>(this StringBuilder @this, IEnumerable<T> sequence, Func<StringBuilder, T, StringBuilder> fn) =>
+            sequence.Aggregate(@this, fn);
+
+        public static TResult Map<TSource, TResult>(this TSource @this, Func<TSource, TResult> fn) =>
+            fn(@this);
+    }
+
+    internal class Program
+    {
+        private static string BuildSelectBox(IDictionary<int, string> options, string id, bool includeUnknown) =>
+            new StringBuilder()
+                .AppendFormattedLine("<select id=\"{0}\" name=\"{0}\">", id)
+                .AppendLineWhen(
+                    () => includeUnknown,
+                    sb => sb.AppendLine("\t<option>Unknown</option>"))
+                .AppendSequence(options, (sb, opt) =>
+                    sb.AppendFormattedLine("\t<option value=\"{0}\">{1}</option>", opt.Key, opt.Value))
+                .AppendLine("</select>")
+                .ToString();
+
+        private static void Main(string[] args)
         {
-            byte[] buffer;
-
-            using (var stream = StreamFactory.GetStream())
-            {
-                buffer = new byte[stream.Length];
-                stream.Read(buffer, 0, (int)stream.Length);
-            }
-
-            var options =
-                Encoding
-                    .UTF8
-                    .GetString(buffer)
+            var selectBox = Disposable
+                    .Using(
+                        StreamFactory.GetStream,
+                        steam =>
+                        {
+                            var b = new byte[steam.Length];
+                            steam.Read(b, 0, (int)steam.Length);
+                            return b;
+                        })
+                    .Map(Encoding.UTF8.GetString)
                     .Split(new[] { Environment.NewLine, }, StringSplitOptions.RemoveEmptyEntries)
                     .Select((s, ix) => Tuple.Create(ix, s))
-                    .ToDictionary(k => k.Item1, v => v.Item2);
-
-            var selectBox = BuildSelectBox(options, "theDoctors", true);
+                    .ToDictionary(k => k.Item1, v => v.Item2)
+                    .Map(options => BuildSelectBox(options, "theDoctors", true));
 
             Console.WriteLine(selectBox);
 
