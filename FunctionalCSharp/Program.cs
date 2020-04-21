@@ -33,6 +33,13 @@ namespace FunctionalCSharp
 
         public static TResult Map<TSource, TResult>(this TSource @this, Func<TSource, TResult> fn) =>
             fn(@this);
+
+        public static T Tee<T>(this T @this, Action<T> act)
+        {
+            act(@this);
+            return @this;
+        }
+            
     }
 
     internal class Program
@@ -53,19 +60,13 @@ namespace FunctionalCSharp
             var selectBox = Disposable
                     .Using(
                         StreamFactory.GetStream,
-                        steam =>
-                        {
-                            var b = new byte[steam.Length];
-                            steam.Read(b, 0, (int)steam.Length);
-                            return b;
-                        })
+                        steam => new byte[steam.Length].Tee(b => steam.Read(b, 0, (int)steam.Length)))
                     .Map(Encoding.UTF8.GetString)
                     .Split(new[] { Environment.NewLine, }, StringSplitOptions.RemoveEmptyEntries)
                     .Select((s, ix) => Tuple.Create(ix, s))
                     .ToDictionary(k => k.Item1, v => v.Item2)
-                    .Map(options => BuildSelectBox(options, "theDoctors", true));
-
-            Console.WriteLine(selectBox);
+                    .Map(options => BuildSelectBox(options, "theDoctors", true))
+                    .Tee(Console.WriteLine);
 
             Console.ReadLine();
         }
